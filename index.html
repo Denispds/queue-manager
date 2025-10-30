@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Queue Manager - Sistema de Gestão de Fila</title>
+    <title>Queue Manager - Sistema Completo</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -16,268 +16,384 @@
         const { useState, useEffect } = React;
         
         const SUPABASE_URL = 'https://wymmzfqfocofgmkhkayz.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5bW16ZnFmb2NvZmdta2hrYXl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc5MzA3NTMsImV4cCI6MjA2MzUwNjc1M30.49wFI7sazIaBgQsv2b0bN7f7AGUyqaUZN27-ZWa8srk';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5bW16ZnFmb2NvZmdta2hrYXl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc5MzA3NTMsImV4cCI6MjA2MzUwNjc1M30.49wFI7sazIaBgQsv2b0bN7f7AGUyqaUZN27-ZWa8srk';
 
-        function QueueManager() {
-            const [perfilAtivo, setPerfilAtivo] = useState('login');
-            const [vendedorLogado, setVendedorLogado] = useState(null);
+        function App() {
+            const [perfil, setPerfil] = useState('login');
+            const [vendedor, setVendedor] = useState(null);
+            const [tela, setTela] = useState('fila');
             const [vendedores, setVendedores] = useState([]);
+            const [clientes, setClientes] = useState([]);
+            const [vendas, setVendas] = useState([]);
             const [loading, setLoading] = useState(true);
-            const [error, setError] = useState(null);
+            const [busca, setBusca] = useState('');
+            const [novoCliente, setNovoCliente] = useState({});
+            const [clienteSel, setClienteSel] = useState(null);
+            const [valor, setValor] = useState('');
+            const [vendaSel, setVendaSel] = useState(null);
 
             useEffect(() => {
-                carregarVendedores();
-                const interval = setInterval(carregarVendedores, 10000);
-                return () => clearInterval(interval);
+                carregar();
+                const i = setInterval(carregar, 5000);
+                return () => clearInterval(i);
             }, []);
 
-            const carregarVendedores = async () => {
+            const carregar = async () => {
                 try {
-                    const response = await fetch(`${SUPABASE_URL}/rest/v1/vendedores?select=*`, {
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                        }
-                    });
+                    const h = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
                     
-                    if (!response.ok) throw new Error('Erro ao carregar');
+                    const [rv, rc, rvd] = await Promise.all([
+                        fetch(`${SUPABASE_URL}/rest/v1/vendedores?select=*`, {headers: h}),
+                        fetch(`${SUPABASE_URL}/rest/v1/clientes?select=*`, {headers: h}),
+                        fetch(`${SUPABASE_URL}/rest/v1/vendasIA?select=*`, {headers: h})
+                    ]);
+
+                    const dv = await rv.json();
+                    const dc = await rc.json();
+                    const dvd = await rvd.json();
+
+                    setVendedores(dv.filter(v => v.ativo).sort((a,b) => a.nome.localeCompare(b.nome)));
+                    setClientes(dc);
+                    setVendas(dvd);
                     
-                    const data = await response.json();
-                    const ativos = data.filter(v => v.ativo === true).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
-                    
-                    setVendedores(ativos);
-                    if (vendedorLogado) {
-                        const atualizado = ativos.find(v => v.id_vendedor === vendedorLogado.id_vendedor);
-                        if (atualizado) setVendedorLogado(atualizado);
+                    if (vendedor) {
+                        const upd = dv.find(v => v.id_vendedor === vendedor.id_vendedor);
+                        if (upd) setVendedor(upd);
                     }
-                    setError(null);
+                    
                     setLoading(false);
-                } catch (err) {
-                    setError(err.message);
+                } catch (e) {
                     setLoading(false);
                 }
             };
 
-            const atualizarVendedor = async (id, dados) => {
-                try {
-                    await fetch(`${SUPABASE_URL}/rest/v1/vendedores?id_vendedor=eq.${id}`, {
-                        method: 'PATCH',
-                        headers: {
-                            'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                            'Content-Type': 'application/json',
-                            'Prefer': 'return=representation'
-                        },
-                        body: JSON.stringify(dados)
-                    });
-                    await carregarVendedores();
-                } catch (err) {
-                    console.error(err);
+            const atualizar = async (id, dados) => {
+                await fetch(`${SUPABASE_URL}/rest/v1/vendedores?id_vendedor=eq.${id}`, {
+                    method: 'PATCH',
+                    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dados)
+                });
+                await carregar();
+            };
+
+            const reorganizar = async () => {
+                const fila = vendedores.filter(v => v.status === 'disponivel' && v.posicao_fila).sort((a,b) => a.posicao_fila - b.posicao_fila);
+                for (let i = 0; i < fila.length; i++) {
+                    await atualizar(fila[i].id_vendedor, { posicao_fila: i + 1 });
                 }
             };
 
-            const entrarNaFila = async () => {
-                const naFila = vendedores.filter(v => v.status === 'disponivel' && v.posicao_fila);
-                const novaPosicao = naFila.length > 0 ? Math.max(...naFila.map(v => v.posicao_fila)) + 1 : 1;
-                await atualizarVendedor(vendedorLogado.id_vendedor, { status: 'disponivel', posicao_fila: novaPosicao });
+            const entrarFila = async () => {
+                const fila = vendedores.filter(v => v.status === 'disponivel' && v.posicao_fila);
+                const pos = fila.length > 0 ? Math.max(...fila.map(v => v.posicao_fila)) + 1 : 1;
+                await atualizar(vendedor.id_vendedor, { status: 'disponivel', posicao_fila: pos });
             };
 
-            const entrarEmPausa = async () => {
-                await atualizarVendedor(vendedorLogado.id_vendedor, { status: 'pausa', posicao_fila: null });
+            const pausar = async () => {
+                await atualizar(vendedor.id_vendedor, { status: 'pausa', posicao_fila: null });
+                await reorganizar();
             };
 
-            const iniciarAtendimento = async () => {
-                await atualizarVendedor(vendedorLogado.id_vendedor, {
+            const iniciar = async () => {
+                await atualizar(vendedor.id_vendedor, {
                     status: 'atendimento',
                     posicao_fila: null,
-                    atendimentos_hoje: (vendedorLogado.atendimentos_hoje || 0) + 1
+                    atendimentos_hoje: (vendedor.atendimentos_hoje || 0) + 1
                 });
+                await reorganizar();
+                setTela('cadastro');
+            };
+
+            const finalizar = async () => {
+                const fila = vendedores.filter(v => v.status === 'disponivel' && v.posicao_fila);
+                const pos = fila.length > 0 ? Math.max(...fila.map(v => v.posicao_fila)) + 1 : 1;
+                
+                await atualizar(vendedor.id_vendedor, { status: 'disponivel', posicao_fila: pos });
+                
+                setTela('fila');
+                setClienteSel(null);
+                setNovoCliente({});
+                setBusca('');
+            };
+
+            const salvarCliente = async () => {
+                if (!novoCliente.nome || !novoCliente.telefone || !novoCliente.tipo) {
+                    alert('Preencha nome, telefone e tipo!');
+                    return;
+                }
+
+                await fetch(`${SUPABASE_URL}/rest/v1/clientes`, {
+                    method: 'POST',
+                    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nome: novoCliente.nome,
+                        telefone: novoCliente.telefone,
+                        cpf_cnpj: novoCliente.cpf_cnpj,
+                        email: novoCliente.email,
+                        tipo: novoCliente.tipo,
+                        vendedor_cadastro_id: vendedor.id_vendedor,
+                        vendedor_cadastro_nome: vendedor.nome
+                    })
+                });
+
+                alert('Cliente cadastrado!');
+                await carregar();
+                finalizar();
+            };
+
+            const iniciarSep = async (id) => {
+                await fetch(`${SUPABASE_URL}/rest/v1/vendasIA?id_venda=eq.${id}`, {
+                    method: 'PATCH',
+                    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'em_separacao' })
+                });
+                await carregar();
+            };
+
+            const finalizarVenda = async () => {
+                if (!valor) return;
+                const v = parseFloat(valor.replace(',', '.'));
+                
+                await fetch(`${SUPABASE_URL}/rest/v1/vendasIA?id_venda=eq.${vendaSel.id_venda}`, {
+                    method: 'PATCH',
+                    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'finalizado', valor_venda: v, em_aberto: false })
+                });
+
+                const vend = vendedores.find(x => x.id_vendedor === vendaSel.vendedor_id);
+                if (vend) {
+                    await atualizar(vendaSel.vendedor_id, {
+                        vendas_hoje: (vend.vendas_hoje || 0) + 1,
+                        faturamento_hoje: parseFloat(vend.faturamento_hoje || 0) + v
+                    });
+                }
+
+                setVendaSel(null);
+                setValor('');
+                await carregar();
             };
 
             if (loading) {
-                return (
-                    <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                        <div className="bg-white rounded-2xl shadow-2xl p-8 text-center">
-                            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto"></div>
-                            <p className="mt-4 text-gray-700 font-semibold">Conectando...</p>
-                        </div>
-                    </div>
-                );
+                return <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <div className="bg-white p-8 rounded-2xl"><div className="animate-spin w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div><p className="mt-4 font-semibold">Carregando...</p></div>
+                </div>;
             }
 
-            if (error) {
-                return (
-                    <div className="min-h-screen bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center p-4">
-                        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
-                            <div className="text-6xl mb-4">⚠️</div>
-                            <h2 className="text-2xl font-bold mb-2">Erro</h2>
-                            <p className="text-gray-600 mb-6">{error}</p>
-                            <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700">
-                                Recarregar
-                            </button>
-                        </div>
-                    </div>
-                );
-            }
-
-            if (perfilAtivo === 'login') {
-                return (
-                    <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
-                        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-                            <div className="text-center mb-8">
-                                <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                                    </svg>
-                                </div>
-                                <h1 className="text-3xl font-bold text-gray-800">Queue Manager</h1>
-                                <p className="text-gray-600 mt-2">Sistema de Gestão de Fila</p>
-                                <div className="mt-3 flex items-center justify-center gap-2">
-                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                    <p className="text-sm text-green-600 font-semibold">Conectado ao Supabase</p>
-                                </div>
-                            </div>
-                            <button className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-semibold" onClick={() => setPerfilAtivo('selecionar')}>
-                                Login como Vendedor
-                            </button>
-                        </div>
-                    </div>
-                );
-            }
-
-            if (perfilAtivo === 'selecionar') {
-                return (
-                    <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
-                        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full max-h-[80vh] overflow-y-auto">
-                            <h2 className="text-2xl font-bold mb-4">Selecione seu nome:</h2>
-                            <div className="space-y-2">
-                                {vendedores.map(v => (
-                                    <button 
-                                        key={v.id_vendedor}
-                                        onClick={() => { setVendedorLogado(v); setPerfilAtivo('fila'); }}
-                                        className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-blue-50 rounded-lg flex justify-between items-center transition"
-                                    >
-                                        <div>
-                                            <span className="font-semibold">{v.nome}</span>
-                                            <span className="text-xs text-gray-500 ml-2">({v.tipo})</span>
-                                        </div>
-                                        <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                            v.status === 'disponivel' ? 'bg-green-100 text-green-800' :
-                                            v.status === 'atendimento' ? 'bg-red-100 text-red-800' :
-                                            'bg-yellow-100 text-yellow-800'
-                                        }`}>
-                                            {v.status === 'disponivel' ? '🟢' : v.status === 'atendimento' ? '🔴' : '🟡'}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                            <button onClick={() => setPerfilAtivo('login')} className="w-full mt-4 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600">
-                                Voltar
-                            </button>
-                        </div>
-                    </div>
-                );
-            }
-
-            const vendedor = vendedores.find(v => v.id_vendedor === vendedorLogado?.id_vendedor);
-            const fila = vendedores.filter(v => v.status === 'disponivel' && v.posicao_fila).sort((a, b) => a.posicao_fila - b.posicao_fila);
-            const ehMinhavez = fila[0]?.id_vendedor === vendedorLogado?.id_vendedor;
-
-            return (
-                <div className="min-h-screen bg-gray-100">
-                    <div className="bg-blue-600 text-white p-4 shadow-lg">
-                        <div className="max-w-7xl mx-auto flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            if (perfil === 'login') {
+                return <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+                        <div className="text-center mb-8">
+                            <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                 </svg>
-                                <div>
-                                    <h1 className="text-xl font-bold">Queue Manager</h1>
-                                    <p className="text-sm opacity-90">{vendedorLogado?.nome}</p>
-                                </div>
                             </div>
-                            <button onClick={() => { setVendedorLogado(null); setPerfilAtivo('login'); }} className="bg-white text-blue-600 px-4 py-2 rounded-lg hover:bg-gray-100 font-semibold">
-                                Sair
-                            </button>
+                            <h1 className="text-3xl font-bold">Queue Manager</h1>
+                            <p className="text-gray-600 mt-2">Sistema de Gestão de Fila</p>
+                            <div className="mt-3 flex items-center justify-center gap-2">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                <p className="text-sm text-green-600 font-semibold">Conectado ao Supabase</p>
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            <button className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-semibold" onClick={() => setPerfil('selecionar')}>Login como Vendedor</button>
+                            <button className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 font-semibold" onClick={() => setPerfil('expedicao')}>Login como Expedição</button>
+                            <button className="w-full bg-gray-700 text-white py-3 rounded-lg hover:bg-gray-800 font-semibold" onClick={() => setPerfil('gestor')}>Login como Gestor</button>
                         </div>
                     </div>
-                    
-                    <div className="max-w-7xl mx-auto p-4 space-y-6">
-                        <div className="bg-white rounded-xl shadow-lg p-6">
-                            <h2 className="text-2xl font-bold mb-4">Meu Status</h2>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="bg-blue-50 p-4 rounded-lg">
-                                    <p className="text-sm text-gray-600">Status</p>
-                                    <p className="text-lg font-bold text-blue-600">
-                                        {vendedor?.status === 'disponivel' ? '🟢 Na Fila' : vendedor?.status === 'pausa' ? '🟡 Pausa' : '🔴 Atendimento'}
-                                    </p>
-                                </div>
-                                <div className="bg-green-50 p-4 rounded-lg">
-                                    <p className="text-sm text-gray-600">Posição</p>
-                                    <p className="text-lg font-bold text-green-600">{vendedor?.posicao_fila || '-'}</p>
-                                </div>
-                                <div className="bg-purple-50 p-4 rounded-lg">
-                                    <p className="text-sm text-gray-600">Atendimentos</p>
-                                    <p className="text-lg font-bold text-purple-600">{vendedor?.atendimentos_hoje || 0}</p>
-                                </div>
-                                <div className="bg-orange-50 p-4 rounded-lg">
-                                    <p className="text-sm text-gray-600">Vendas</p>
-                                    <p className="text-lg font-bold text-orange-600">{vendedor?.vendas_hoje || 0}</p>
-                                </div>
-                            </div>
-                            <div className="mt-6 flex gap-3">
-                                {vendedor?.status === 'pausa' && (
-                                    <button onClick={entrarNaFila} className="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold">
-                                        ▶ Entrar na Fila
-                                    </button>
-                                )}
-                                {vendedor?.status === 'disponivel' && !ehMinhavez && (
-                                    <button onClick={entrarEmPausa} className="flex-1 bg-yellow-600 text-white py-3 rounded-lg hover:bg-yellow-700 font-semibold">
-                                        ⏸ Fazer Pausa
-                                    </button>
-                                )}
-                                {ehMinhavez && (
-                                    <button onClick={iniciarAtendimento} className="flex-1 bg-blue-600 text-white py-4 rounded-lg hover:bg-blue-700 font-bold text-xl animate-pulse">
-                                        🎯 INICIAR ATENDIMENTO
-                                    </button>
-                                )}
-                            </div>
-                        </div>
+                </div>;
+            }
 
-                        <div className="bg-white rounded-xl shadow-lg p-6">
-                            <h2 className="text-2xl font-bold mb-4">Fila de Atendimento</h2>
-                            {fila.length === 0 ? (
-                                <p className="text-center text-gray-500 py-8">Nenhum vendedor na fila</p>
-                            ) : (
-                                <div className="space-y-3">
-                                    {fila.map((v, i) => (
-                                        <div key={v.id_vendedor} className={`p-4 rounded-lg border-2 ${v.id_vendedor === vendedorLogado.id_vendedor ? 'bg-blue-50 border-blue-500' : 'bg-gray-50 border-gray-200'}`}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg ${i === 0 ? 'bg-green-500' : 'bg-gray-400'}`}>
-                                                        {v.posicao_fila}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold text-lg">{v.nome}</p>
-                                                        <p className="text-sm text-gray-600">{v.atendimentos_hoje || 0} atendimentos hoje</p>
-                                                    </div>
-                                                </div>
-                                                <div className="text-right">
-                                                    {i === 0 && <span className="text-green-600 font-bold text-lg">🎯 PRÓXIMO</span>}
-                                                    {v.id_vendedor === vendedorLogado.id_vendedor && <span className="text-blue-600 font-bold">Você</span>}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+            if (perfil === 'selecionar') {
+                return <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl p-8 max-w-md w-full max-h-[80vh] overflow-y-auto">
+                        <h2 className="text-2xl font-bold mb-4">Selecione seu nome:</h2>
+                        <div className="space-y-2">
+                            {vendedores.map(v => <button key={v.id_vendedor} onClick={() => { setVendedor(v); setPerfil('vendedor'); }} className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-blue-50 rounded-lg flex justify-between">
+                                <span className="font-semibold">{v.nome}</span>
+                                <span className={`px-2 py-1 rounded text-xs ${v.status === 'disponivel' ? 'bg-green-100 text-green-800' : v.status === 'atendimento' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                    {v.status === 'disponivel' ? '🟢' : v.status === 'atendimento' ? '🔴' : '🟡'}
+                                </span>
+                            </button>)}
                         </div>
+                        <button onClick={() => setPerfil('login')} className="w-full mt-4 bg-gray-500 text-white py-2 rounded-lg">Voltar</button>
+                    </div>
+                </div>;
+            }
+
+            if (perfil === 'expedicao') {
+                const pend = vendas.filter(v => v.status !== 'finalizado');
+                return <div className="min-h-screen bg-gray-100">
+                    <div className="bg-purple-600 text-white p-4">
+                        <div className="max-w-7xl mx-auto flex justify-between">
+                            <h1 className="text-2xl font-bold">📦 Expedição</h1>
+                            <button onClick={() => setPerfil('login')} className="bg-white text-purple-600 px-4 py-2 rounded-lg font-semibold">Sair</button>
+                        </div>
+                    </div>
+                    <div className="max-w-7xl mx-auto p-4">
+                        <div className="bg-white rounded-xl p-6">
+                            <h2 className="text-2xl font-bold mb-4">Vendas Pendentes ({pend.length})</h2>
+                            <div className="space-y-3">
+                                {pend.map(v => <div key={v.id_venda} className={`p-4 rounded-lg border-2 ${v.status === 'aguardando_separacao' ? 'bg-red-50 border-red-300' : 'bg-yellow-50 border-yellow-300'}`}>
+                                    <p className="font-bold">{v.cliente_nome || 'Cliente'}</p>
+                                    <p className="text-sm">Vendedor: {v.vendedor_nome}</p>
+                                    {v.status === 'aguardando_separacao' && <button onClick={() => iniciarSep(v.id_venda)} className="mt-2 w-full bg-blue-600 text-white py-2 rounded-lg">Iniciar Separação</button>}
+                                    {v.status === 'em_separacao' && <button onClick={() => setVendaSel(v)} className="mt-2 w-full bg-green-600 text-white py-2 rounded-lg">Finalizar Venda</button>}
+                                </div>)}
+                                {pend.length === 0 && <p className="text-center text-gray-500 py-8">Nenhuma venda pendente</p>}
+                            </div>
+                        </div>
+                    </div>
+                    {vendaSel && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl p-8 max-w-md w-full">
+                            <h2 className="text-2xl font-bold mb-4">Finalizar Venda</h2>
+                            <p className="mb-4">Cliente: {vendaSel.cliente_nome}</p>
+                            <input type="text" placeholder="Valor (ex: 150,00)" value={valor} onChange={(e) => setValor(e.target.value.replace(/[^0-9,]/g, ''))} className="w-full p-3 border rounded-lg mb-4 text-xl text-center" />
+                            <div className="flex gap-3">
+                                <button onClick={() => { setVendaSel(null); setValor(''); }} className="flex-1 bg-gray-500 text-white py-3 rounded-lg">Cancelar</button>
+                                <button onClick={finalizarVenda} disabled={!valor} className="flex-1 bg-green-600 text-white py-3 rounded-lg disabled:bg-gray-400 font-bold">Confirmar</button>
+                            </div>
+                        </div>
+                    </div>}
+                </div>;
+            }
+
+            if (perfil === 'gestor') {
+                const totalAtend = vendedores.reduce((a, v) => a + (v.atendimentos_hoje || 0), 0);
+                const totalVendas = vendedores.reduce((a, v) => a + (v.vendas_hoje || 0), 0);
+                const totalFat = vendedores.reduce((a, v) => a + parseFloat(v.faturamento_hoje || 0), 0);
+
+                return <div className="min-h-screen bg-gray-100">
+                    <div className="bg-gray-700 text-white p-4">
+                        <div className="max-w-7xl mx-auto flex justify-between">
+                            <h1 className="text-2xl font-bold">📊 Painel do Gestor</h1>
+                            <button onClick={() => setPerfil('login')} className="bg-white text-gray-700 px-4 py-2 rounded-lg font-semibold">Sair</button>
+                        </div>
+                    </div>
+                    <div className="max-w-7xl mx-auto p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div className="bg-blue-500 text-white p-6 rounded-xl"><p className="text-sm opacity-90">Atendimentos</p><p className="text-4xl font-bold">{totalAtend}</p></div>
+                            <div className="bg-green-500 text-white p-6 rounded-xl"><p className="text-sm opacity-90">Vendas</p><p className="text-4xl font-bold">{totalVendas}</p></div>
+                            <div className="bg-yellow-500 text-white p-6 rounded-xl"><p className="text-sm opacity-90">Faturamento</p><p className="text-2xl font-bold">R$ {totalFat.toFixed(2)}</p></div>
+                        </div>
+                        <div className="bg-white rounded-xl p-6 overflow-x-auto">
+                            <h2 className="text-2xl font-bold mb-4">Performance por Vendedor</h2>
+                            <table className="w-full">
+                                <thead><tr className="border-b-2"><th className="text-left p-2">Vendedor</th><th className="text-center p-2">Status</th><th className="text-center p-2">Atend</th><th className="text-center p-2">Vendas</th><th className="text-center p-2">Faturamento</th></tr></thead>
+                                <tbody>{vendedores.map(v => <tr key={v.id_vendedor} className="border-b">
+                                    <td className="p-2">{v.nome}</td>
+                                    <td className="text-center">{v.status === 'disponivel' ? '🟢' : v.status === 'atendimento' ? '🔴' : '🟡'}</td>
+                                    <td className="text-center">{v.atendimentos_hoje || 0}</td>
+                                    <td className="text-center font-bold text-green-600">{v.vendas_hoje || 0}</td>
+                                    <td className="text-center font-bold">R$ {parseFloat(v.faturamento_hoje || 0).toFixed(2)}</td>
+                                </tr>)}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>;
+            }
+
+            const v = vendedores.find(x => x.id_vendedor === vendedor?.id_vendedor);
+            const fila = vendedores.filter(x => x.status === 'disponivel' && x.posicao_fila).sort((a,b) => a.posicao_fila - b.posicao_fila);
+            const minhavez = fila[0]?.id_vendedor === vendedor?.id_vendedor;
+
+            if (tela === 'cadastro') {
+                const filtrados = clientes.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()) || c.telefone.includes(busca));
+
+                return <div className="min-h-screen bg-gray-100">
+                    <div className="bg-blue-600 text-white p-4">
+                        <div className="max-w-7xl mx-auto flex justify-between">
+                            <h1 className="text-xl font-bold">Cadastro de Cliente</h1>
+                            <button onClick={finalizar} className="bg-red-500 px-4 py-2 rounded-lg">Cancelar</button>
+                        </div>
+                    </div>
+                    <div className="max-w-2xl mx-auto p-4">
+                        <div className="bg-white rounded-xl p-6">
+                            <h2 className="text-xl font-bold mb-4">Buscar Cliente</h2>
+                            <input type="text" placeholder="Nome ou telefone..." value={busca} onChange={(e) => setBusca(e.target.value)} className="w-full p-3 border rounded-lg mb-4" />
+                            <div className="space-y-2 max-h-64 overflow-y-auto mb-6">
+                                {filtrados.slice(0, 10).map(c => <div key={c.id_cliente} onClick={() => setClienteSel(c)} className="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer">
+                                    <p className="font-bold">{c.nome}</p>
+                                    <p className="text-sm text-gray-600">{c.telefone}</p>
+                                </div>)}
+                            </div>
+                            
+                            {clienteSel && <div className="bg-green-50 p-4 rounded-lg mb-4">
+                                <p className="font-bold">Selecionado: {clienteSel.nome}</p>
+                                <button onClick={finalizar} className="mt-2 w-full bg-green-600 text-white py-2 rounded-lg">Confirmar</button>
+                            </div>}
+
+                            <hr className="my-6" />
+                            
+                            <h2 className="text-xl font-bold mb-4">Novo Cliente</h2>
+                            <div className="space-y-3">
+                                <input type="text" placeholder="Nome *" value={novoCliente.nome || ''} onChange={(e) => setNovoCliente({...novoCliente, nome: e.target.value})} className="w-full p-3 border rounded-lg" />
+                                <input type="text" placeholder="Telefone *" value={novoCliente.telefone || ''} onChange={(e) => setNovoCliente({...novoCliente, telefone: e.target.value})} className="w-full p-3 border rounded-lg" />
+                                <input type="text" placeholder="CPF/CNPJ" value={novoCliente.cpf_cnpj || ''} onChange={(e) => setNovoCliente({...novoCliente, cpf_cnpj: e.target.value})} className="w-full p-3 border rounded-lg" />
+                                <input type="email" placeholder="E-mail" value={novoCliente.email || ''} onChange={(e) => setNovoCliente({...novoCliente, email: e.target.value})} className="w-full p-3 border rounded-lg" />
+                                <select value={novoCliente.tipo || ''} onChange={(e) => setNovoCliente({...novoCliente, tipo: e.target.value})} className="w-full p-3 border rounded-lg">
+                                    <option value="">Tipo *</option>
+                                    <option value="uso_proprio">👤 Uso Próprio</option>
+                                    <option value="revenda">🏢 Revenda</option>
+                                </select>
+                                <button onClick={salvarCliente} disabled={!novoCliente.nome || !novoCliente.telefone || !novoCliente.tipo} className="w-full bg-blue-600 text-white py-3 rounded-lg disabled:bg-gray-400 font-bold">Salvar e Finalizar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>;
+            }
+
+            return <div className="min-h-screen bg-gray-100">
+                <div className="bg-blue-600 text-white p-4">
+                    <div className="max-w-7xl mx-auto flex justify-between items-center">
+                        <div>
+                            <h1 className="text-xl font-bold">Queue Manager</h1>
+                            <p className="text-sm opacity-90">{vendedor?.nome}</p>
+                        </div>
+                        <button onClick={() => { setVendedor(null); setPerfil('login'); }} className="bg-white text-blue-600 px-4 py-2 rounded-lg font-semibold">Sair</button>
                     </div>
                 </div>
-            );
+                
+                <div className="max-w-7xl mx-auto p-4 space-y-6">
+                    <div className="bg-white rounded-xl p-6">
+                        <h2 className="text-2xl font-bold mb-4">Meu Status</h2>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div className="bg-blue-50 p-4 rounded-lg"><p className="text-sm text-gray-600">Status</p><p className="text-lg font-bold text-blue-600">{v?.status === 'disponivel' ? '🟢 Na Fila' : v?.status === 'pausa' ? '🟡 Pausa' : '🔴 Atendimento'}</p></div>
+                            <div className="bg-green-50 p-4 rounded-lg"><p className="text-sm text-gray-600">Posição</p><p className="text-lg font-bold text-green-600">{v?.posicao_fila || '-'}</p></div>
+                            <div className="bg-purple-50 p-4 rounded-lg"><p className="text-sm text-gray-600">Atendimentos</p><p className="text-lg font-bold text-purple-600">{v?.atendimentos_hoje || 0}</p></div>
+                            <div className="bg-orange-50 p-4 rounded-lg"><p className="text-sm text-gray-600">Vendas</p><p className="text-lg font-bold text-orange-600">{v?.vendas_hoje || 0}</p></div>
+                        </div>
+                        <div className="flex gap-3">
+                            {v?.status === 'pausa' && <button onClick={entrarFila} className="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold">▶ Entrar na Fila</button>}
+                            {v?.status === 'disponivel' && !minhavez && <button onClick={pausar} className="flex-1 bg-yellow-600 text-white py-3 rounded-lg hover:bg-yellow-700 font-semibold">⏸ Fazer Pausa</button>}
+                            {minhavez && <button onClick={iniciar} className="flex-1 bg-blue-600 text-white py-4 rounded-lg hover:bg-blue-700 font-bold text-xl animate-pulse">🎯 INICIAR ATENDIMENTO</button>}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl p-6">
+                        <h2 className="text-2xl font-bold mb-4">Fila de Atendimento</h2>
+                        {fila.length === 0 ? <p className="text-center text-gray-500 py-8">Nenhum vendedor na fila</p> : 
+                            <div className="space-y-3">
+                                {fila.map((x, i) => <div key={x.id_vendedor} className={`p-4 rounded-lg border-2 ${x.id_vendedor === vendedor.id_vendedor ? 'bg-blue-50 border-blue-500' : 'bg-gray-50 border-gray-200'}`}>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg ${i === 0 ? 'bg-green-500' : 'bg-gray-400'}`}>{x.posicao_fila}</div>
+                                            <div><p className="font-bold text-lg">{x.nome}</p><p className="text-sm text-gray-600">{x.atendimentos_hoje || 0} atendimentos</p></div>
+                                        </div>
+                                        <div className="text-right">
+                                            {i === 0 && <span className="text-green-600 font-bold text-lg">🎯 PRÓXIMO</span>}
+                                            {x.id_vendedor === vendedor.id_vendedor && <span className="text-blue-600 font-bold">Você</span>}
+                                        </div>
+                                    </div>
+                                </div>)}
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>;
         }
 
-        ReactDOM.render(<QueueManager />, document.getElementById('root'));
+        ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
 </html>
